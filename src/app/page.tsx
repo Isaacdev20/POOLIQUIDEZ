@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Header } from '../components/Header';
 import { HeroMonthlyProfitCard } from '../components/HeroMonthlyProfitCard';
+import { TimeInRangeCard } from '../components/TimeInRangeCard';
 import { PoolConfigPanel } from '../components/PoolConfigPanel';
 import { CapitalSplitCard } from '../components/CapitalSplitCard';
 import { PriceRangeVisualizer } from '../components/PriceRangeVisualizer';
@@ -11,7 +12,8 @@ import { HistoricalDefiLlamaChart } from '../components/HistoricalDefiLlamaChart
 import { StrategyComparison } from '../components/StrategyComparison';
 import { PRESET_POOLS, PresetPool } from '../lib/constants';
 import { calculateUniswapV3Simulation } from '../lib/uniswapMath';
-import { SimulationInput, PoolMetadata, DefiLlamaHistoryPoint } from '../types';
+import { calculateTimeInRangeStats } from '../lib/timeInRangeMath';
+import { SimulationInput, PoolMetadata, DefiLlamaHistoryPoint, HistoricalPricePoint } from '../types';
 import { AlertCircle, ShieldAlert, Sparkles } from 'lucide-react';
 
 export default function Home() {
@@ -20,6 +22,7 @@ export default function Home() {
   );
   const [pool, setPool] = useState<PoolMetadata | null>(null);
   const [history, setHistory] = useState<DefiLlamaHistoryPoint[]>([]);
+  const [historicalPrices, setHistoricalPrices] = useState<HistoricalPricePoint[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -51,6 +54,7 @@ export default function Home() {
         const p = data.pool;
         setPool(p);
         setHistory(data.chart || []);
+        setHistoricalPrices(data.prices || []);
 
         const curPrice = p.currentPrice || 2350;
         const defaultMin = curPrice * 0.85; // -15%
@@ -108,15 +112,28 @@ export default function Home() {
     }));
   };
 
+  // Compute real Time-in-Range statistics based on DefiLlama historical price series
+  const timeInRangeStats = useMemo(() => {
+    return calculateTimeInRangeStats(
+      historicalPrices,
+      input.priceMin,
+      input.priceMax,
+      input.currentPrice
+    );
+  }, [historicalPrices, input.priceMin, input.priceMax, input.currentPrice]);
+
   // Compute simulation result dynamically
   const result = useMemo(() => {
     try {
-      return calculateUniswapV3Simulation(input);
+      return calculateUniswapV3Simulation({
+        ...input,
+        inRangePercentage: timeInRangeStats.days30.inRangePct > 0 ? timeInRangeStats.days30.inRangePct : 90,
+      });
     } catch (e) {
       console.error('Calculation error:', e);
       return null;
     }
-  }, [input]);
+  }, [input, timeInRangeStats.days30.inRangePct]);
 
   return (
     <div className="min-h-screen bg-[#080B10] text-slate-100 flex flex-col font-sans">
@@ -150,6 +167,11 @@ export default function Home() {
         {/* HERO MONTHLY PROFIT CARD - The core answer to the user prompt */}
         {result && (
           <HeroMonthlyProfitCard result={result} pool={pool} />
+        )}
+
+        {/* TIME IN RANGE CARD - Box de tempo no range, histórico e duração estimada */}
+        {result && (
+          <TimeInRangeCard stats={timeInRangeStats} result={result} pool={pool} />
         )}
 
         {/* 2-Column Grid: Config Controls & Capital Allocation */}

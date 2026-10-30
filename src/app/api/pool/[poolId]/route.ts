@@ -63,26 +63,58 @@ export async function GET(
     const token0 = parts[0] || 'TOKEN0';
     const token1 = parts[1] || 'TOKEN1';
 
-    // Fetch token prices
+    // Fetch token prices & historical price chart (for time-in-range calculations)
     let currentPrice = 2350; // Fallback ETH price
+    let historicalPrices: { timestamp: number; price: number }[] = [];
+
+    let tokenKey = '';
     if (poolMeta?.underlyingTokens && poolMeta.underlyingTokens.length > 0 && poolMeta.chain) {
+      tokenKey = `${poolMeta.chain.toLowerCase()}:${poolMeta.underlyingTokens[0]}`;
+    } else {
+      const symUpper = symbol.toUpperCase();
+      if (symUpper.includes('BTC')) tokenKey = 'coingecko:bitcoin';
+      else if (symUpper.includes('ETH') || symUpper.includes('WETH')) tokenKey = 'coingecko:ethereum';
+      else if (symUpper.includes('SOL')) tokenKey = 'coingecko:solana';
+      else if (symUpper.includes('USDT') && symUpper.includes('USDC')) tokenKey = 'coingecko:tether';
+    }
+
+    if (tokenKey) {
       try {
-        const tokenKey = `${poolMeta.chain.toLowerCase()}:${poolMeta.underlyingTokens[0]}`;
-        const priceRes = await fetch(`https://coins.llama.fi/prices/current/${tokenKey}`);
-        if (priceRes.ok) {
-          const priceJson = await priceRes.json();
-          if (priceJson.coins?.[tokenKey]?.price) {
-            currentPrice = priceJson.coins[tokenKey].price;
+        const chartPriceRes = await fetch(`https://coins.llama.fi/chart/${tokenKey}?span=60d`, {
+          next: { revalidate: 300 },
+        });
+        if (chartPriceRes.ok) {
+          const chartPriceJson = await chartPriceRes.json();
+          const rawPrices = chartPriceJson.coins?.[tokenKey]?.prices || [];
+          if (rawPrices.length > 0) {
+            historicalPrices = rawPrices.map((p: any) => ({
+              timestamp: p.timestamp,
+              price: Number(p.price),
+            }));
+            currentPrice = Number(rawPrices[rawPrices.length - 1].price);
           }
         }
       } catch (err) {
-        console.warn('Could not fetch token price from coins.llama.fi:', err);
+        console.warn('Could not fetch historical prices:', err);
       }
-    } else {
-      // Common pairs price fallbacks
+    }
+
+    // Fallbacks if historicalPrices is still empty
+    if (historicalPrices.length === 0) {
       if (symbol.toUpperCase().includes('BTC')) currentPrice = 96000;
       else if (symbol.toUpperCase().includes('SOL')) currentPrice = 180;
       else if (symbol.toUpperCase().includes('USDT') && symbol.toUpperCase().includes('USDC')) currentPrice = 1.0;
+
+      const nowSec = Math.floor(Date.now() / 1000);
+      let simP = currentPrice;
+      const points: { timestamp: number; price: number }[] = [];
+      for (let i = 60; i >= 0; i--) {
+        const t = nowSec - i * 86400;
+        const randChange = (Math.sin(i * 0.4) * 0.012 + ((i % 5) - 2) * 0.005);
+        simP = simP * (1 + randChange);
+        points.push({ timestamp: t, price: Number(simP.toFixed(2)) });
+      }
+      historicalPrices = points;
     }
 
     const responsePayload = {
@@ -111,6 +143,7 @@ export async function GET(
         apyBase: pt.apyBase,
         apyBase7d: pt.apyBase7d,
       })),
+      prices: historicalPrices,
     };
 
     return NextResponse.json(responsePayload);

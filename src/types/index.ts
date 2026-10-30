@@ -26,6 +26,44 @@ export interface DefiLlamaHistoryPoint {
   apyBase7d?: number;
 }
 
+export interface HistoricalPricePoint {
+  timestamp: number;
+  price: number;
+}
+
+export interface DailyTimelinePoint {
+  date: string;
+  timestamp: number;
+  price: number;
+  inRange: boolean;
+  status: 'in_range' | 'below' | 'above';
+}
+
+export interface TimeInRangeStats {
+  currentStatus: 'in_range' | 'below_range' | 'above_range';
+  currentStreakDays: number;
+  days7: {
+    inRangeDays: number;
+    totalDays: number;
+    inRangePct: number;
+  };
+  days30: {
+    inRangeDays: number;
+    totalDays: number;
+    inRangePct: number;
+  };
+  days60: {
+    inRangeDays: number;
+    totalDays: number;
+    inRangePct: number;
+  };
+  estimatedDurationDays: number; // e.g. ~24 days
+  dailyVolatilityPct: number;
+  minPriceHistorical30d: number;
+  maxPriceHistorical30d: number;
+  dailyTimeline: DailyTimelinePoint[];
+}
+
 export interface SimulationInput {
   depositUsd: number;
   currentPrice: number;
