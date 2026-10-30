@@ -236,3 +236,4 @@ export function TimeInRangeCard({ stats, result, pool }: TimeInRangeCardProps) {
     </div>
   );
 }
+

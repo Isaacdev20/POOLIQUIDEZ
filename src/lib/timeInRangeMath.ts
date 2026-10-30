@@ -135,3 +135,4 @@ export function calculateTimeInRangeStats(
     dailyTimeline: dailyTimeline.slice(-30), // keep last 30 days for display
   };
 }
+

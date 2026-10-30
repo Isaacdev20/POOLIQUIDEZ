@@ -1,8 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { SimulationInput, PoolMetadata } from '../types';
-import { Sliders, DollarSign, Layers, Compass, HelpCircle } from 'lucide-react';
+import { Sliders, DollarSign, Layers, Compass, Plus, Minus, AlertCircle } from 'lucide-react';
 
 interface PoolConfigPanelProps {
   input: SimulationInput;
@@ -21,12 +21,57 @@ export function PoolConfigPanel({
 }: PoolConfigPanelProps) {
   const currentPrice = input.currentPrice;
 
+  // Local text buffers to allow natural typing, backspacing and editing
+  const [minStr, setMinStr] = useState<string>(input.priceMin.toString());
+  const [maxStr, setMaxStr] = useState<string>(input.priceMax.toString());
+
+  // Synchronize when external props change (e.g. presets or pool change)
+  useEffect(() => {
+    setMinStr(input.priceMin.toString());
+  }, [input.priceMin]);
+
+  useEffect(() => {
+    setMaxStr(input.priceMax.toString());
+  }, [input.priceMax]);
+
   const handleDepositQuickSet = (val: number) => {
     onChangeInput({ ...input, depositUsd: val });
   };
 
-  const pctDown = (((input.priceMin - currentPrice) / currentPrice) * 100).toFixed(1);
-  const pctUp = (((input.priceMax - currentPrice) / currentPrice) * 100).toFixed(1);
+  const handleMinChange = (val: string) => {
+    setMinStr(val);
+    const num = parseFloat(val);
+    if (!isNaN(num) && num > 0) {
+      onChangeInput({ ...input, priceMin: num });
+    }
+  };
+
+  const handleMaxChange = (val: string) => {
+    setMaxStr(val);
+    const num = parseFloat(val);
+    if (!isNaN(num) && num > 0) {
+      onChangeInput({ ...input, priceMax: num });
+    }
+  };
+
+  const handleNudgeMin = (pctDelta: number) => {
+    const nextVal = Math.max(0.0001, input.priceMin * (1 + pctDelta / 100));
+    onChangeInput({ ...input, priceMin: Number(nextVal.toFixed(nextVal < 10 ? 4 : 2)) });
+  };
+
+  const handleNudgeMax = (pctDelta: number) => {
+    const nextVal = Math.max(0.0001, input.priceMax * (1 + pctDelta / 100));
+    onChangeInput({ ...input, priceMax: Number(nextVal.toFixed(nextVal < 10 ? 4 : 2)) });
+  };
+
+  // Percent calculation from current price
+  const pctDownNum = ((input.priceMin - currentPrice) / currentPrice) * 100;
+  const pctDownStr = pctDownNum >= 0 ? `+${pctDownNum.toFixed(1)}%` : `${pctDownNum.toFixed(1)}%`;
+
+  const pctUpNum = ((input.priceMax - currentPrice) / currentPrice) * 100;
+  const pctUpStr = pctUpNum >= 0 ? `+${pctUpNum.toFixed(1)}%` : `${pctUpNum.toFixed(1)}%`;
+
+  const isInvalidRange = input.priceMax <= input.priceMin;
 
   return (
     <div className="bg-surface rounded-2xl border border-surfaceBorder p-5 md:p-6 shadow-xl">
@@ -137,48 +182,90 @@ export function PoolConfigPanel({
             </button>
           </div>
 
-          {/* Min Price and Max Price Inputs */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-            {/* Min Price */}
-            <div className="bg-[#080B10] p-3 rounded-xl border border-surfaceBorder">
-              <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
-                <span>Preço Mínimo (P_min)</span>
-                <span className="font-mono text-cyan-400 text-[11px] font-semibold">{pctDown}%</span>
+          {/* Min Price and Max Price Inputs with Natural Editing & Step Controls */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-2">
+            {/* Min Price (P_min) */}
+            <div className="bg-[#080B10] p-3.5 rounded-xl border border-surfaceBorder">
+              <div className="flex items-center justify-between text-xs text-slate-400 mb-1.5">
+                <span className="font-semibold text-slate-300">Preço Mínimo (P_min)</span>
+                <span className="font-mono text-cyan-400 text-[11px] font-semibold">{pctDownStr}</span>
               </div>
-              <div className="flex items-center gap-1">
-                <span className="text-xs text-slate-500">$</span>
+              <div className="flex items-center gap-1.5 bg-surfaceLight/60 px-3 py-1.5 rounded-lg border border-surfaceBorder focus-within:border-cyan-400">
+                <span className="text-xs text-slate-400 font-bold">$</span>
                 <input
-                  type="number"
-                  step="any"
-                  value={input.priceMin}
-                  onChange={(e) =>
-                    onChangeInput({ ...input, priceMin: Math.max(0.0001, parseFloat(e.target.value) || 0) })
-                  }
+                  type="text"
+                  inputMode="decimal"
+                  value={minStr}
+                  onChange={(e) => handleMinChange(e.target.value)}
+                  placeholder="0.00"
                   className="w-full bg-transparent font-mono font-bold text-sm text-white focus:outline-none"
                 />
+              </div>
+
+              {/* Nudge Buttons P_min */}
+              <div className="flex items-center justify-between gap-1 mt-2">
+                <span className="text-[10px] text-slate-500">Ajuste:</span>
+                <div className="flex gap-1">
+                  {[-5, -1, 1, 5].map((pct) => (
+                    <button
+                      key={pct}
+                      type="button"
+                      onClick={() => handleNudgeMin(pct)}
+                      className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-surface border border-surfaceBorder text-slate-400 hover:text-white hover:bg-surfaceLight"
+                    >
+                      {pct > 0 ? `+${pct}%` : `${pct}%`}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
-            {/* Max Price */}
-            <div className="bg-[#080B10] p-3 rounded-xl border border-surfaceBorder">
-              <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
-                <span>Preço Máximo (P_max)</span>
-                <span className="font-mono text-cyan-400 text-[11px] font-semibold">+{pctUp}%</span>
+            {/* Max Price (P_max) */}
+            <div className="bg-[#080B10] p-3.5 rounded-xl border border-surfaceBorder">
+              <div className="flex items-center justify-between text-xs text-slate-400 mb-1.5">
+                <span className="font-semibold text-slate-300">Preço Máximo (P_max)</span>
+                <span className="font-mono text-cyan-400 text-[11px] font-semibold">{pctUpStr}</span>
               </div>
-              <div className="flex items-center gap-1">
-                <span className="text-xs text-slate-500">$</span>
+              <div className="flex items-center gap-1.5 bg-surfaceLight/60 px-3 py-1.5 rounded-lg border border-surfaceBorder focus-within:border-cyan-400">
+                <span className="text-xs text-slate-400 font-bold">$</span>
                 <input
-                  type="number"
-                  step="any"
-                  value={input.priceMax}
-                  onChange={(e) =>
-                    onChangeInput({ ...input, priceMax: Math.max(input.priceMin + 0.0001, parseFloat(e.target.value) || 0) })
-                  }
+                  type="text"
+                  inputMode="decimal"
+                  value={maxStr}
+                  onChange={(e) => handleMaxChange(e.target.value)}
+                  placeholder="0.00"
                   className="w-full bg-transparent font-mono font-bold text-sm text-white focus:outline-none"
                 />
               </div>
+
+              {/* Nudge Buttons P_max */}
+              <div className="flex items-center justify-between gap-1 mt-2">
+                <span className="text-[10px] text-slate-500">Ajuste:</span>
+                <div className="flex gap-1">
+                  {[-5, -1, 1, 5, 10].map((pct) => (
+                    <button
+                      key={pct}
+                      type="button"
+                      onClick={() => handleNudgeMax(pct)}
+                      className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-surface border border-surfaceBorder text-slate-400 hover:text-white hover:bg-surfaceLight"
+                    >
+                      {pct > 0 ? `+${pct}%` : `${pct}%`}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
+
+          {/* Warning badge if range is inverted */}
+          {isInvalidRange && (
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-2.5 flex items-center gap-2 text-xs text-amber-300 mt-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0 text-amber-400" />
+              <span>
+                Atenção: O <strong>P_max</strong> (${input.priceMax}) deve ser estritamente superior ao <strong>P_min</strong> (${input.priceMin}).
+              </span>
+            </div>
+          )}
         </div>
 
         {/* 3. Pool Market Metrics (DefiLlama / Simulator Parameters) */}
@@ -251,4 +338,3 @@ export function PoolConfigPanel({
     </div>
   );
 }
-

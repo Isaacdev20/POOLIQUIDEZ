@@ -48,8 +48,8 @@ export function StrategyComparison({
   });
 
   // 4. Full Range (V2)
-  const fullMin = currentPrice * 0.001;
-  const fullMax = currentPrice * 1000;
+  const fullMin = currentPrice * 0.1;
+  const fullMax = currentPrice * 5.0;
   const fullRes = calculateUniswapV3Simulation({
     ...baseInput,
     priceMin: fullMin,

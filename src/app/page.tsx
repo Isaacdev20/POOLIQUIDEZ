@@ -107,8 +107,8 @@ export default function Home() {
     const cur = input.currentPrice;
     setInput((prev) => ({
       ...prev,
-      priceMin: cur * 0.001,
-      priceMax: cur * 1000,
+      priceMin: Math.max(0.0001, cur * 0.1),
+      priceMax: cur * 5.0,
     }));
   };
 

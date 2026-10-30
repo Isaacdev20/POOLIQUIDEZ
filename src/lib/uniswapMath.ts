@@ -16,47 +16,48 @@ export function calculateUniswapV3Simulation(input: SimulationInput): Simulation
     inRangePercentage = 90,
   } = input;
 
-  if (priceMin <= 0 || priceMax <= 0 || priceMin >= priceMax || currentPrice <= 0 || depositUsd <= 0) {
-    throw new Error('Parâmetros de preço ou depósito inválidos.');
-  }
+  const safeDeposit = Math.max(1, depositUsd || 1000);
+  const safeCurrentPrice = Math.max(0.000001, currentPrice || 1);
+  const safePriceMin = Math.max(0.000001, priceMin || safeCurrentPrice * 0.85);
+  const safePriceMax = priceMax > safePriceMin ? priceMax : safePriceMin * 1.05;
 
-  const sqrtP = Math.sqrt(currentPrice);
-  const sqrtPa = Math.sqrt(priceMin);
-  const sqrtPb = Math.sqrt(priceMax);
+  const sqrtP = Math.sqrt(safeCurrentPrice);
+  const sqrtPa = Math.sqrt(safePriceMin);
+  const sqrtPb = Math.sqrt(safePriceMax);
 
   let L = 0;
   let token0Amount = 0;
   let token1Amount = 0;
 
   // 1. Calculate Liquidity L & Token Amounts
-  if (currentPrice <= priceMin) {
+  if (safeCurrentPrice <= safePriceMin) {
     // 100% Token 0 (e.g., ETH)
-    token0Amount = depositUsd / currentPrice;
+    token0Amount = safeDeposit / safeCurrentPrice;
     token1Amount = 0;
     L = (token0Amount * sqrtPa * sqrtPb) / (sqrtPb - sqrtPa);
-  } else if (currentPrice >= priceMax) {
+  } else if (safeCurrentPrice >= safePriceMax) {
     // 100% Token 1 (e.g., USDC)
     token0Amount = 0;
-    token1Amount = depositUsd;
+    token1Amount = safeDeposit;
     L = token1Amount / (sqrtPb - sqrtPa);
   } else {
     // In Range: Split between Token 0 and Token 1
     // V = L * [ sqrtP * (1 - sqrtP/sqrtPb) + (sqrtP - sqrtPa) ]
     const denominator = sqrtP * (1 - sqrtP / sqrtPb) + (sqrtP - sqrtPa);
-    L = depositUsd / denominator;
+    L = safeDeposit / (denominator || 1);
 
     token0Amount = (L * (sqrtPb - sqrtP)) / (sqrtP * sqrtPb);
     token1Amount = L * (sqrtP - sqrtPa);
   }
 
-  const token0ValueUsd = token0Amount * currentPrice;
+  const token0ValueUsd = token0Amount * safeCurrentPrice;
   const token1ValueUsd = token1Amount;
-  const token0RatioPct = (token0ValueUsd / depositUsd) * 100;
-  const token1RatioPct = (token1ValueUsd / depositUsd) * 100;
+  const token0RatioPct = (token0ValueUsd / safeDeposit) * 100;
+  const token1RatioPct = (token1ValueUsd / safeDeposit) * 100;
 
   // 2. Capital Efficiency Multiplier compared to Uniswap V2 (infinite range)
   // L_v2 = V / (2 * sqrtP)
-  const lV2 = depositUsd / (2 * sqrtP);
+  const lV2 = safeDeposit / (2 * sqrtP);
   const capitalEfficiency = Math.max(1, L / (lV2 || 1));
 
   // 3. Fee Earnings Estimation
@@ -69,30 +70,30 @@ export function calculateUniswapV3Simulation(input: SimulationInput): Simulation
   const activeLiquidityWeight = Math.min(capitalEfficiency, 100);
   const userShareOfPoolFees =
     poolTvlUsd > 0
-      ? Math.min(1.0, (depositUsd * activeLiquidityWeight * 0.45) / poolTvlUsd)
+      ? Math.min(1.0, (safeDeposit * activeLiquidityWeight * 0.45) / poolTvlUsd)
       : 0;
 
-  const inRangeMultiplier = inRangePercentage / 100;
+  const inRangeMultiplier = (inRangePercentage || 90) / 100;
   const dailyFeeUsd = totalDailyPoolFees * userShareOfPoolFees * inRangeMultiplier;
   const weeklyFeeUsd = dailyFeeUsd * 7;
   const monthlyFeeUsd = dailyFeeUsd * 30; // 30 days projection
-  const periodFeeUsd = dailyFeeUsd * days;
+  const periodFeeUsd = dailyFeeUsd * (days || 30);
   const yearlyFeeUsd = dailyFeeUsd * 365;
 
   // Returns / APR
-  const dailyReturnPct = (dailyFeeUsd / depositUsd) * 100;
-  const monthlyReturnPct = (monthlyFeeUsd / depositUsd) * 100;
-  const feeAprPct = (yearlyFeeUsd / depositUsd) * 100;
+  const dailyReturnPct = (dailyFeeUsd / safeDeposit) * 100;
+  const monthlyReturnPct = (monthlyFeeUsd / safeDeposit) * 100;
+  const feeAprPct = (yearlyFeeUsd / safeDeposit) * 100;
 
   // Compound APY: (1 + r_daily)^365 - 1
-  const dailyRate = dailyFeeUsd / depositUsd;
+  const dailyRate = dailyFeeUsd / safeDeposit;
   const feeApyCompoundPct =
     dailyRate > 0 && dailyRate < 1 ? (Math.pow(1 + dailyRate, 365) - 1) * 100 : feeAprPct;
 
   // Range and Buffers
-  const rangeWidthPct = ((priceMax - priceMin) / currentPrice) * 100;
-  const downsideBufferPct = ((currentPrice - priceMin) / currentPrice) * 100;
-  const upsideBufferPct = ((priceMax - currentPrice) / currentPrice) * 100;
+  const rangeWidthPct = ((safePriceMax - safePriceMin) / safeCurrentPrice) * 100;
+  const downsideBufferPct = ((safeCurrentPrice - safePriceMin) / safeCurrentPrice) * 100;
+  const upsideBufferPct = ((safePriceMax - safeCurrentPrice) / safeCurrentPrice) * 100;
 
   // 4. Impermanent Loss Scenarios across a price curve (-40% to +40%)
   const priceVariations = [
@@ -100,7 +101,7 @@ export function calculateUniswapV3Simulation(input: SimulationInput): Simulation
   ];
 
   const scenarios: ILScenario[] = priceVariations.map((variation) => {
-    const targetPrice = currentPrice * (1 + variation);
+    const targetPrice = safeCurrentPrice * (1 + variation);
     const sqrtPNew = Math.sqrt(targetPrice);
 
     // HODL value of initial tokens
@@ -113,12 +114,12 @@ export function calculateUniswapV3Simulation(input: SimulationInput): Simulation
 
     let status: 'below' | 'in_range' | 'above' = 'in_range';
 
-    if (targetPrice <= priceMin) {
+    if (targetPrice <= safePriceMin) {
       status = 'below';
       t0New = L * (1 / sqrtPa - 1 / sqrtPb);
       t1New = 0;
       lpValueUsd = t0New * targetPrice;
-    } else if (targetPrice >= priceMax) {
+    } else if (targetPrice >= safePriceMax) {
       status = 'above';
       t0New = 0;
       t1New = L * (sqrtPb - sqrtPa);
@@ -137,7 +138,7 @@ export function calculateUniswapV3Simulation(input: SimulationInput): Simulation
     // Net profit after period fees
     const feesEarnedUsd = periodFeeUsd;
     const netProfitUsd = impermanentLossUsd + feesEarnedUsd;
-    const netProfitPct = (netProfitUsd / depositUsd) * 100;
+    const netProfitPct = (netProfitUsd / safeDeposit) * 100;
 
     return {
       targetPrice,
@@ -158,12 +159,12 @@ export function calculateUniswapV3Simulation(input: SimulationInput): Simulation
   // Calculate Break-Even Days for a standard -10% price move
   const ilAtMinus10 = Math.abs(
     scenarios.find((s) => Math.abs(s.priceChangePct - -10) < 0.1)?.impermanentLossUsd ||
-      depositUsd * 0.015
+      safeDeposit * 0.015
   );
   const breakEvenDays = dailyFeeUsd > 0 ? Math.ceil(ilAtMinus10 / dailyFeeUsd) : 0;
 
   return {
-    initialDepositUsd: depositUsd,
+    initialDepositUsd: safeDeposit,
     token0Amount,
     token1Amount,
     token0ValueUsd,
@@ -181,9 +182,9 @@ export function calculateUniswapV3Simulation(input: SimulationInput): Simulation
     monthlyReturnPct,
     feeAprPct,
     feeApyCompoundPct,
-    priceMin,
-    priceMax,
-    currentPrice,
+    priceMin: safePriceMin,
+    priceMax: safePriceMax,
+    currentPrice: safeCurrentPrice,
     rangeWidthPct,
     downsideBufferPct,
     upsideBufferPct,

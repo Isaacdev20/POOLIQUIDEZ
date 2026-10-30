@@ -13,15 +13,22 @@ export function PriceRangeVisualizer({ result, pool }: PriceRangeVisualizerProps
   const { currentPrice, priceMin, priceMax, capitalEfficiency } = result;
   const isInRange = currentPrice >= priceMin && currentPrice <= priceMax;
 
-  // Calculate percentage position of current price inside a broader visual window [0.6 * min, 1.4 * max]
-  const viewMin = priceMin * 0.7;
-  const viewMax = priceMax * 1.3;
-  const viewSpan = viewMax - viewMin;
+  // Calculate coordinates including currentPrice, priceMin and priceMax safely
+  const allPrices = [priceMin, priceMax, currentPrice];
+  const lowest = Math.min(...allPrices);
+  const highest = Math.max(...allPrices);
+  const span = highest - lowest || 1;
+  const viewMin = Math.max(0, lowest - span * 0.12);
+  const viewMax = highest + span * 0.12;
+  const viewSpan = viewMax - viewMin || 1;
 
-  const leftPct = Math.max(0, Math.min(100, ((priceMin - viewMin) / viewSpan) * 100));
-  const rightPct = Math.max(0, Math.min(100, ((priceMax - viewMin) / viewSpan) * 100));
-  const currentPct = Math.max(0, Math.min(100, ((currentPrice - viewMin) / viewSpan) * 100));
+  const leftPct = Math.max(6, Math.min(84, ((priceMin - viewMin) / viewSpan) * 100));
+  const rightPct = Math.max(leftPct + 4, Math.min(94, ((priceMax - viewMin) / viewSpan) * 100));
+  const currentPct = Math.max(4, Math.min(96, ((currentPrice - viewMin) / viewSpan) * 100));
   const widthPct = Math.max(2, rightPct - leftPct);
+
+  const labelLeftPct = Math.min(75, Math.max(12, leftPct));
+  const labelRightPct = Math.min(88, Math.max(labelLeftPct + 16, rightPct));
 
   return (
     <div className="bg-surface rounded-2xl border border-surfaceBorder p-5 md:p-6 shadow-xl">
@@ -114,16 +121,16 @@ export function PriceRangeVisualizer({ result, pool }: PriceRangeVisualizerProps
         {/* Axis Labels */}
         <div className="relative w-full h-6 mt-1 text-[11px] font-mono text-slate-400">
           <span
-            className="absolute -translate-x-1/2 text-emerald-400 font-bold"
-            style={{ left: `${leftPct}%` }}
+            className="absolute -translate-x-1/2 text-emerald-400 font-bold whitespace-nowrap"
+            style={{ left: `${labelLeftPct}%` }}
           >
-            ${priceMin.toFixed(2)} (Min)
+            ${priceMin.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Min)
           </span>
           <span
-            className="absolute -translate-x-1/2 text-emerald-400 font-bold"
-            style={{ left: `${rightPct}%` }}
+            className="absolute -translate-x-1/2 text-emerald-400 font-bold whitespace-nowrap"
+            style={{ left: `${labelRightPct}%` }}
           >
-            ${priceMax.toFixed(2)} (Max)
+            ${priceMax.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Max)
           </span>
         </div>
       </div>
